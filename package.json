@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@types/snoowrap": "^1.16.0",
+    "minimist": "^1.2.0",
+    "snoowrap": "^1.15.2",
+    "typescript": "^2.9.2"
+  }
+}
