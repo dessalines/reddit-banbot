@@ -9,6 +9,10 @@ You provide it with:
 - A sort order for threads to scan from that subreddit.
 - A sort order for users comments (it only fetches 100, so either new or top comments)
 
+## Running
+
+`./run.sh` , or run the following command:
+
 ```sh
 yarn && tsc -p . && node dist/out-tsc/banbot.js \
 --clientId X \
@@ -25,7 +29,7 @@ yarn && tsc -p . && node dist/out-tsc/banbot.js \
 --dryRun                # optional, doesnt ban
 ```
 
-### Requirements
+## Requirements
 - node, typescript, yarn
 
 ### Setup a reddit script client
