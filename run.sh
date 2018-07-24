@@ -1,4 +1,4 @@
-tsc -p . && node dist/out-tsc/banbot.js \
+yarn && tsc -p . && node dist/out-tsc/banbot.js \
 --clientId X \
 --clientSecret X \
 --username X \

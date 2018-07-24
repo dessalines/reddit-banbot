@@ -15,21 +15,28 @@ class Banbot {
 
   badSubs: Array<string> = argv['badSubs'];
   subreddit: string = argv['subreddit'];
-  threadSort: string = argv['threadSort'];
+  threadSort = argv['threadSort'];
+  userCommentSort: string = argv['userCommentSort'];
   badKarmaLimit: number = argv['badKarma'];
   banDuration: number = argv['banDuration'];
   save: boolean = argv['save'];
-  userCommentSort: string = argv['userCommentSort'];
+  dryRun: boolean = argv['dryRun'];
+
+  waitMS: number = 1100;
 
   submissionOptions: ListingOptions & { time?: Timespan } = {
-    show: argv['sort'],
-    time: argv['sort']
+    time: this.threadSort
   };
 
   userOverviewOptions: any = {
     sort: this.userCommentSort,
     limit: 100
   };
+
+  snooWrapOptions: snoowrap.ConfigOptions = {
+    continueAfterRatelimitError: true,
+    requestDelay: this.waitMS
+  }
 
   submissionList: Array<string> = [];
   submissionExcludeList: Array<string>;
@@ -38,7 +45,7 @@ class Banbot {
   userBanList: Array<UserReport> = [];
   userBanExcludeList: Array<UserReport>;
 
-  waitMS: number = 1100;
+
 
   constructor() {
 
@@ -49,16 +56,7 @@ class Banbot {
       this.initFiles();
       this.main();
     } else {
-      console.log('You\'re missing an option: ' +
-        '--clientId X \\n' +
-        '--clientSecret X \\n' +
-        '--username X \\n' +
-        '--password X \\n' +
-        '--badSubs={X1,X2} (example: {cringeanarchy, milliondollarextreme}\\n' +
-        '--subreddit X \\n' +
-        '--sort hour (example: hour, day, week, month, year, all) \\n' +
-        '--badKarma X \\n' +
-        '--save');
+      console.log('Goto https://github.com/dessalines/reddit-banbot for help');
     }
 
   }
@@ -119,8 +117,9 @@ class Banbot {
       clientId: argv['clientId'],
       clientSecret: argv['clientSecret'],
       username: argv['username'],
-      password: argv['password']
+      password: argv['password'],
     });
+    this.r.config(this.snooWrapOptions);
   }
 
 
@@ -187,28 +186,31 @@ class Banbot {
 
   async banUsers() {
 
-    for (let userReport of this.userBanList) {
-      console.log('Banning:');
-      console.log(userReport);
+    if (this.dryRun) {
+      console.log("Not banning, but here's the list:");
+      console.log(this.userBanList);
+    } else {
+      console.log('Banning users: ');
+      console.log(this.userBanList);
+      for (let userReport of this.userBanList) {
+        let banMessage = "You have been banned from /r/" + this.subreddit +
+          " for " + this.banDuration + " days" +
+          " for having " + userReport.badKarma + " out of our limit of " + this.badKarmaLimit +
+          " in these subreddits: " + this.badSubs;
+        let banOptions: BanOptions = {
+          name: userReport.user,
+          banMessage: banMessage,
+          banReason: banMessage,
+        };
 
-      let banMessage = "You have been banned from /r/" + this.subreddit +
-        " for " + this.banDuration + " days" +
-        " for having " + userReport.badKarma + " out of our limit of " + this.badKarmaLimit +
-        " in these subreddits: " + this.badSubs;
-      let banOptions: BanOptions = {
-        name: userReport.user,
-        banMessage: banMessage,
-        banReason: banMessage,
-      };
-      console.log(banOptions);
-
+        this.r.getSubreddit(this.subreddit).banUser(banOptions).then();
+      }
     }
 
   }
 
   async fetchTopThreads() {
     console.log('Fetching top threads from r/' + this.subreddit + ' ...');
-    await this.sleep(this.waitMS);
 
     return await this.r.getSubreddit(this.subreddit).getTop(this.submissionOptions)
       // Don't include the ones already saved
@@ -218,8 +220,6 @@ class Banbot {
 
   async fetchUsersFromThread(thread: string) {
     console.log('Fetching users from thread: ' + thread + ' ...');
-
-    await this.sleep(this.waitMS);
 
     let users: Array<string> = [];
 
@@ -238,6 +238,8 @@ class Banbot {
           this.recursiveReplyLoop(replies, users);
 
         }
+      }).catch (async e => {
+        console.error(e.message);
       });
 
     return await users;
@@ -258,7 +260,6 @@ class Banbot {
   async fetchUserCommentsBad(user: string) {
     console.log('Fetching comments from user: ' + user + ' ...');
 
-    await this.sleep(this.waitMS);
     // https://www.reddit.com/dev/api#GET_user_{username}_comments
     return await this.r.getUser(user)
       .getOverview(this.userOverviewOptions)
@@ -274,10 +275,6 @@ class Banbot {
     if (list.indexOf(item) === -1) {
       list.push(item);
     }
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
 }
