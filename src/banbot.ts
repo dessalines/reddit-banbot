@@ -9,7 +9,6 @@ var userBanListFile = 'saved/report.json',
   submissionFile = 'saved/submissions.json',
   userListFile = 'saved/users.json';
 
-// TODO remove all their comments from your sub too.
 class Banbot {
 
   r: snoowrap;
@@ -221,10 +220,10 @@ class Banbot {
 
     let banMessage = "You have been banned from /r/" + this.subreddit +
       " for " + this.banDuration + " days" +
-      " for having " + badKarma +
+      " for having " + badKarma + " karma" + 
       " out of our limit of " + this.badKarmaLimit +
       " in these subreddits: " + this.badSubs;
-    let banReason = this.badKarmaLimit + " karma in " + this.badSubs;
+    let banReason = badKarma + "/" + this.badKarmaLimit + " karma in " + this.badSubs;
     let banOptions: BanOptions = {
       name: username,
       banMessage: banMessage,
@@ -234,13 +233,13 @@ class Banbot {
     };
 
     // Ban the user
-    this.r.getSubreddit(this.subreddit).banUser(banOptions).then(() => {
+    await this.r.getSubreddit(this.subreddit).banUser(banOptions).then(() => {
       console.log("Banned " + username + " from " + this.subreddit);
     });
 
     // Remove their comments
     if (this.removeComments) {
-      this.r.getUser(username).getComments().fetchAll()
+      await this.r.getUser(username).getComments().fetchAll()
         .filter(c => c.subreddit.display_name.toLowerCase() === this.subreddit)
         .forEach(c => {
           c.remove().then(() => {
@@ -307,7 +306,7 @@ class Banbot {
     // https://www.reddit.com/dev/api#GET_user_{username}_comments
     return await this.r.getUser(user)
       .getOverview(this.userOverviewOptions)
-      // .filter(i => i.banned_by.name != argv['username'])
+      // .fetchAll() possibly fetch all their comments?
       .filter(i => this.badSubs.includes(i.subreddit.display_name.toLowerCase()))
       .map(i => i.score)
       // sum the upvotes in the bad subs
