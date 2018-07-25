@@ -9,6 +9,7 @@ var userBanListFile = 'saved/report.json',
   submissionFile = 'saved/submissions.json',
   userListFile = 'saved/users.json';
 
+// TODO remove all their comments from your sub too.
 class Banbot {
 
   r: snoowrap;
@@ -19,6 +20,7 @@ class Banbot {
   userCommentSort: string = argv['userCommentSort'];
   badKarmaLimit: number = argv['badKarma'];
   banDuration: number = argv['banDuration'];
+  removeComments: boolean = argv['removeComments'];
   save: boolean = argv['save'];
   dryRun: boolean = argv['dryRun'];
 
@@ -45,8 +47,6 @@ class Banbot {
   userBanList: Array<UserReport> = [];
   userBanExcludeList: Array<UserReport>;
 
-
-
   constructor() {
 
     console.log(argv);
@@ -63,9 +63,12 @@ class Banbot {
 
   async main() {
     await this.fillSubmissionList();
+    await this.fillAlreadyBannedList();
     await this.fillUserList();
     await this.fillBanList();
     await this.banUsers();
+    // test banning a user
+    // await this.banUser("Aro2220", 3591);
   }
 
   initFiles() {
@@ -82,7 +85,7 @@ class Banbot {
         this.userExcludeList = JSON.parse(fs.readFileSync(userListFile, 'utf8'));
       }
       if (this.userExcludeList == null) {
-        this.userExcludeList = [];
+        this.userExcludeList = ['AutoModerator'];
       }
       if (fs.existsSync(userBanListFile)) {
         this.userBanExcludeList = JSON.parse(fs.readFileSync(userBanListFile, 'utf8'));
@@ -141,6 +144,17 @@ class Banbot {
 
 
   }
+
+  async fillAlreadyBannedList() {
+
+    if (this.userBanExcludeList.length == 0) {
+      console.log("Fetching initial banned users for " + this.subreddit + " ...");
+      await this.r.getSubreddit(this.subreddit).getBannedUsers().fetchAll().forEach(u => {
+        this.pushUniqueUserReport(this.userBanExcludeList, { user: u.name, badKarma: -1 });
+      });
+    }
+  }
+
   async fillUserList() {
 
     for (let thread of this.submissionList) {
@@ -160,15 +174,19 @@ class Banbot {
 
   async fillBanList() {
 
-    for (let user of this.userList) {
+    // Removes the already banned users so they're not fetched again
+    let filteredUserList = this.userList.filter(u =>
+      !this.userBanExcludeList.map(ub => ub.user).includes(u));
+
+    for (let user of filteredUserList) {
       await this.fetchUserCommentsBad(user).then(badKarma => {
         if (badKarma >= this.badKarmaLimit) {
           let userReport: UserReport = {
             user: user,
             badKarma: badKarma
           }
-          this.pushUnique(this.userBanList, userReport);
-          this.pushUnique(this.userBanExcludeList, userReport);
+          this.pushUniqueUserReport(this.userBanList, userReport);
+          this.pushUniqueUserReport(this.userBanExcludeList, userReport);
         }
       }).catch(e => {
         console.error(e.message);
@@ -190,23 +208,46 @@ class Banbot {
       console.log("Not banning, but here's the list:");
       console.log(this.userBanList);
     } else {
-      console.log('Banning users: ');
+      console.log('Banning users ... ');
       console.log(this.userBanList);
       for (let userReport of this.userBanList) {
-        let banMessage = "You have been banned from /r/" + this.subreddit +
-          " for " + this.banDuration + " days" +
-          " for having " + userReport.badKarma + " out of our limit of " + this.badKarmaLimit +
-          " in these subreddits: " + this.badSubs;
-        let banOptions: BanOptions = {
-          name: userReport.user,
-          banMessage: banMessage,
-          banReason: banMessage,
-        };
-
-        this.r.getSubreddit(this.subreddit).banUser(banOptions).then();
+        this.banUser(userReport.user, userReport.badKarma);
       }
     }
 
+  }
+
+  async banUser(username: string, badKarma: number) {
+
+    let banMessage = "You have been banned from /r/" + this.subreddit +
+      " for " + this.banDuration + " days" +
+      " for having " + badKarma +
+      " out of our limit of " + this.badKarmaLimit +
+      " in these subreddits: " + this.badSubs;
+    let banReason = this.badKarmaLimit + " karma in " + this.badSubs;
+    let banOptions: BanOptions = {
+      name: username,
+      banMessage: banMessage,
+      banReason: banReason,
+      banNote: banMessage,
+      duration: this.banDuration
+    };
+
+    // Ban the user
+    this.r.getSubreddit(this.subreddit).banUser(banOptions).then(() => {
+      console.log("Banned " + username + " from " + this.subreddit);
+    });
+
+    // Remove their comments
+    if (this.removeComments) {
+      this.r.getUser(username).getComments().fetchAll()
+        .filter(c => c.subreddit.display_name.toLowerCase() === this.subreddit)
+        .forEach(c => {
+          c.remove().then(() => {
+            console.log("Removed comment " + c.link_id + " by " + c.author.name + " from " + c.subreddit.display_name);
+          });
+        });
+    }
   }
 
   async fetchTopThreads() {
@@ -238,7 +279,7 @@ class Banbot {
           this.recursiveReplyLoop(replies, users);
 
         }
-      }).catch (async e => {
+      }).catch(async e => {
         console.error(e.message);
       });
 
@@ -250,7 +291,10 @@ class Banbot {
   recursiveReplyLoop(replies: Array<any>, users: Array<string>) {
     for (let reply of replies) {
       let replyAuthor = reply.author.name;
-      this.pushUnique(users, replyAuthor);
+      if (!this.userExcludeList.includes(replyAuthor)) {
+        this.pushUnique(users, replyAuthor);
+      }
+
       if (reply['replies'] !== null) {
         this.recursiveReplyLoop(reply['replies'], users);
       }
@@ -264,8 +308,7 @@ class Banbot {
     return await this.r.getUser(user)
       .getOverview(this.userOverviewOptions)
       // .filter(i => i.banned_by.name != argv['username'])
-      .filter(i => this.badSubs.includes(i.subreddit.display_name))
-      .filter(i => !Object.keys(this.userBanExcludeList).includes(i.author.name))
+      .filter(i => this.badSubs.includes(i.subreddit.display_name.toLowerCase()))
       .map(i => i.score)
       // sum the upvotes in the bad subs
       .reduce((a, b) => a + b, 0);
@@ -273,6 +316,12 @@ class Banbot {
 
   pushUnique(list: Array<any>, item: any) {
     if (list.indexOf(item) === -1) {
+      list.push(item);
+    }
+  }
+
+  pushUniqueUserReport(list: Array<UserReport>, item: UserReport) {
+    if (list.map(ur => ur.user).indexOf(item.user) === -1) {
       list.push(item);
     }
   }

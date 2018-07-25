@@ -25,6 +25,7 @@ yarn && tsc -p . && node dist/out-tsc/banbot.js \
 --userCommentSort X \   # new, top
 --badKarma X \          # A minimum accumulated bad karma threshold
 --banDuration X \       # Number of days
+--removeComments \      # Removes their comments from the subreddit too
 --save \                # Saves users, submissions, and ban report out to the saved folder
 --dryRun                # optional, doesnt ban
 ```
