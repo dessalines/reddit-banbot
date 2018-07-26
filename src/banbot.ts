@@ -306,7 +306,7 @@ class Banbot {
     // https://www.reddit.com/dev/api#GET_user_{username}_comments
     return await this.r.getUser(user)
       .getOverview(this.userOverviewOptions)
-      // .fetchAll() possibly fetch all their comments?
+      .fetchAll() // Fetches all the users comments now
       .filter(i => this.badSubs.includes(i.subreddit.display_name.toLowerCase()))
       .map(i => i.score)
       // sum the upvotes in the bad subs
