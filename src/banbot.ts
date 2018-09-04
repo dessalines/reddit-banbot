@@ -67,7 +67,8 @@ class Banbot {
     await this.fillBanList();
     await this.banUsers();
     // test banning a user
-    // await this.banUser("Aro2220", 3591);
+    // await this.banUser("Tiavor", 3591);
+
   }
 
   initFiles() {
@@ -210,7 +211,7 @@ class Banbot {
       console.log('Banning users ... ');
       console.log(this.userBanList);
       for (let userReport of this.userBanList) {
-        this.banUser(userReport.user, userReport.badKarma);
+        await this.banUser(userReport.user, userReport.badKarma);
       }
     }
 
@@ -218,35 +219,48 @@ class Banbot {
 
   async banUser(username: string, badKarma: number) {
 
+
+    let duration: string = (!this.banDuration) ? " permanently " : " for " + this.banDuration + " days";
+
     let banMessage = "You have been banned from /r/" + this.subreddit +
-      " for " + this.banDuration + " days" +
-      " for having " + badKarma + " karma" + 
+      duration +
+      " for having " + badKarma + " karma" +
       " out of our limit of " + this.badKarmaLimit +
-      " in these subreddits: " + this.badSubs;
-    let banReason = badKarma + "/" + this.badKarmaLimit + " karma in " + this.badSubs;
+      " in these subreddits: " + this.badSubs + 
+      ". If this post history does not describe who you are now, you may appeal this ban.";
+    // The ban reason and note can't be longer than 300 chars
+    let banReason = badKarma + "/" + this.badKarmaLimit + " karma in reactionary subreddits.";
     let banOptions: BanOptions = {
       name: username,
       banMessage: banMessage,
       banReason: banReason,
-      banNote: banMessage,
-      duration: this.banDuration
+      banNote: banReason
     };
 
+    if (this.banDuration) {
+      banOptions.duration = this.banDuration;
+    }
+
     // Ban the user
-    await this.r.getSubreddit(this.subreddit).banUser(banOptions).then(() => {
+    await this.r.getSubreddit(this.subreddit).banUser(banOptions).then(async () => {
       console.log("Banned " + username + " from " + this.subreddit);
+    }).catch(e => {
+      console.error(e.message);
     });
 
     // Remove their comments
     if (this.removeComments) {
       await this.r.getUser(username).getComments().fetchAll()
         .filter(c => c.subreddit.display_name.toLowerCase() === this.subreddit)
-        .forEach(c => {
-          c.remove().then(() => {
+        .forEach(async c => {
+          await c.remove().then(() => {
             console.log("Removed comment " + c.link_id + " by " + c.author.name + " from " + c.subreddit.display_name);
+          }).catch(e => {
+            console.error(e.message);
           });
         });
     }
+
   }
 
   async fetchTopThreads() {
@@ -308,7 +322,9 @@ class Banbot {
       .getOverview(this.userOverviewOptions)
       .fetchAll() // Fetches all the users comments now
       .filter(i => this.badSubs.includes(i.subreddit.display_name.toLowerCase()))
-      .map(i => i.score)
+      .map(i => {
+        return i.score;
+      })
       // sum the upvotes in the bad subs
       .reduce((a, b) => a + b, 0);
   }
