@@ -68,38 +68,30 @@ class Banbot {
     await this.banUsers();
     // test banning a user
     // await this.banUser("Tiavor", 3591);
+    // test fetching user karma
+    // this.testBanUser();
 
   }
 
   initFiles() {
 
     // Create or load the files
-    if (this.save) {
-      if (fs.existsSync(submissionFile)) {
-        this.submissionExcludeList = JSON.parse(fs.readFileSync(submissionFile, 'utf8'));
-      }
-      if (this.submissionExcludeList == null) {
-        this.submissionExcludeList = [];
-      }
-      if (fs.existsSync(userListFile)) {
-        this.userExcludeList = JSON.parse(fs.readFileSync(userListFile, 'utf8'));
-      }
-      if (this.userExcludeList == null) {
-        this.userExcludeList = ['AutoModerator'];
-      }
-      if (fs.existsSync(userBanListFile)) {
-        this.userBanExcludeList = JSON.parse(fs.readFileSync(userBanListFile, 'utf8'));
-      }
-      if (this.userBanExcludeList == null) {
-        this.userBanExcludeList = [];
-      }
-    } else {
-      this.deleteFile(userBanListFile);
-      this.deleteFile(submissionFile);
-      this.deleteFile(userListFile);
-
+    if (fs.existsSync(submissionFile)) {
+      this.submissionExcludeList = JSON.parse(fs.readFileSync(submissionFile, 'utf8'));
+    }
+    if (this.submissionExcludeList == null) {
       this.submissionExcludeList = [];
-      this.userExcludeList = [];
+    }
+    if (fs.existsSync(userListFile)) {
+      this.userExcludeList = JSON.parse(fs.readFileSync(userListFile, 'utf8'));
+    }
+    if (this.userExcludeList == null) {
+      this.userExcludeList = ['AutoModerator'];
+    }
+    if (fs.existsSync(userBanListFile)) {
+      this.userBanExcludeList = JSON.parse(fs.readFileSync(userBanListFile, 'utf8'));
+    }
+    if (this.userBanExcludeList == null) {
       this.userBanExcludeList = [];
     }
   }
@@ -150,7 +142,7 @@ class Banbot {
     if (this.userBanExcludeList.length == 0) {
       console.log("Fetching initial banned users for " + this.subreddit + " ...");
       await this.r.getSubreddit(this.subreddit).getBannedUsers().fetchAll().forEach(u => {
-        this.pushUniqueUserReport(this.userBanExcludeList, { user: u.name, badKarma: -1 });
+        this.pushUniqueUserReport(this.userBanExcludeList, { user: u.name, totalBadKarma: -1 });
       });
     }
   }
@@ -180,22 +172,21 @@ class Banbot {
 
     for (let user of filteredUserList) {
       await this.fetchUserCommentsBad(user).then(badKarma => {
-        if (badKarma >= this.badKarmaLimit) {
-          let userReport: UserReport = {
-            user: user,
-            badKarma: badKarma
-          }
+
+        let userReport: UserReport = this.convertToUserReport(user, badKarma);
+        if (userReport.totalBadKarma >= this.badKarmaLimit) {
+
           this.pushUniqueUserReport(this.userBanList, userReport);
           this.pushUniqueUserReport(this.userBanExcludeList, userReport);
         }
       }).catch(e => {
         console.error(e.message);
-      });;
+      });
     }
 
     // Sort the list
-    this.userBanList.sort((a, b) => b.badKarma - a.badKarma);
-    this.userBanExcludeList.sort((a, b) => b.badKarma - a.badKarma);
+    this.userBanList.sort((a, b) => b.totalBadKarma - a.totalBadKarma);
+    this.userBanExcludeList.sort((a, b) => b.totalBadKarma - a.totalBadKarma);
 
     if (this.save) {
       this.writeFile(userBanListFile, this.userBanExcludeList);
@@ -211,27 +202,27 @@ class Banbot {
       console.log('Banning users ... ');
       console.log(this.userBanList);
       for (let userReport of this.userBanList) {
-        await this.banUser(userReport.user, userReport.badKarma);
+        await this.banUser(userReport);
       }
     }
 
   }
 
-  async banUser(username: string, badKarma: number) {
+  async banUser(userReport: UserReport) {
 
 
     let duration: string = (!this.banDuration) ? " permanently " : " for " + this.banDuration + " days";
 
-    let banMessage = "You have been banned from /r/" + this.subreddit +
-      duration +
-      " for having " + badKarma + " karma" +
+    let banMessage = "You have been banned from /r/" + this.subreddit + duration +
+      " for having " + userReport.totalBadKarma + " karma" +
       " out of our limit of " + this.badKarmaLimit +
-      " in these subreddits: " + this.badSubs + 
+      ". Report: " + JSON.stringify(userReport) +
       ". If this post history does not describe who you are now, you may appeal this ban.";
+
     // The ban reason and note can't be longer than 300 chars
-    let banReason = badKarma + "/" + this.badKarmaLimit + " karma in reactionary subreddits.";
+    let banReason = userReport.totalBadKarma + "/" + this.badKarmaLimit + " karma in reactionary subreddits.";
     let banOptions: BanOptions = {
-      name: username,
+      name: userReport.user,
       banMessage: banMessage,
       banReason: banReason,
       banNote: banReason
@@ -241,16 +232,18 @@ class Banbot {
       banOptions.duration = this.banDuration;
     }
 
+    console.log(banMessage);
+
     // Ban the user
     await this.r.getSubreddit(this.subreddit).banUser(banOptions).then(async () => {
-      console.log("Banned " + username + " from " + this.subreddit);
+      console.log("Banned " + userReport.user + " from " + this.subreddit);
     }).catch(e => {
       console.error(e.message);
     });
 
     // Remove their comments
     if (this.removeComments) {
-      await this.r.getUser(username).getComments().fetchAll()
+      await this.r.getUser(userReport.user).getComments().fetchAll()
         .filter(c => c.subreddit.display_name.toLowerCase() === this.subreddit)
         .forEach(async c => {
           await c.remove().then(() => {
@@ -322,11 +315,11 @@ class Banbot {
       .getOverview(this.userOverviewOptions)
       .fetchAll() // Fetches all the users comments now
       .filter(i => this.badSubs.includes(i.subreddit.display_name.toLowerCase()))
-      .map(i => {
-        return i.score;
-      })
-      // sum the upvotes in the bad subs
-      .reduce((a, b) => a + b, 0);
+      .reduce((result, item) => {
+        let key = item.subreddit.display_name.toLowerCase();
+        result[key] = (result[key] === undefined) ? item.score : result[key] + item.score;
+        return result;
+      }, {});
   }
 
   pushUnique(list: Array<any>, item: any) {
@@ -341,12 +334,60 @@ class Banbot {
     }
   }
 
+  sumTotalBadKarma(badKarma: any): number {
+    return Object.keys(badKarma)
+      .reduce((sum, key) => {
+        return sum + badKarma[key];
+      }, 0);
+  }
+
+  convertToArrayOfBadKarma(badKarma: any): Array<BadKarma> {
+    let bk: Array<BadKarma> = [];
+    for (const key of Object.keys(badKarma)) {
+      bk.push({ subreddit: key, badKarma: badKarma[key] });
+    }
+    return bk;
+  }
+
+  convertToUserReport(user: string, badKarmaObj: any): UserReport {
+    return {
+      user: user,
+      badKarma: this.convertToArrayOfBadKarma(badKarmaObj),
+      totalBadKarma: this.sumTotalBadKarma(badKarmaObj)
+    };
+  }
+
+  testBanUser() {
+    this.fetchUserCommentsBad("mhc-ask").then(d => {
+      let userReport = this.convertToUserReport("mhc-ask", d);
+      console.log(userReport);
+      this.banUser(userReport);
+    });
+  }
+
+  convertBadKarmaOldFile() {
+    let data: Array<{ user: string, badKarma: number }> = JSON.parse(fs.readFileSync(userBanListFile, 'utf8'));
+    this.userBanExcludeList = [];
+    for (let d of data) {
+      console.log(d);
+      this.userBanExcludeList.push({ user: d.user, totalBadKarma: d.badKarma });
+    }
+    this.writeFile('saved/report-replace.json', this.userBanExcludeList);
+  }
+
 }
 
 interface UserReport {
   user: string,
-  badKarma: number
+  badKarma?: Array<BadKarma>;
+  totalBadKarma: number;
 }
+
+interface BadKarma {
+  subreddit: string;
+  badKarma: number;
+}
+
 
 let b: Banbot = new Banbot();
 
