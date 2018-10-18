@@ -197,10 +197,10 @@ class Banbot {
 
     if (this.dryRun) {
       console.log("Not banning, but here's the list:");
-      console.log(this.userBanList);
+      console.log(JSON.stringify(this.userBanList));
     } else {
       console.log('Banning users ... ');
-      console.log(this.userBanList);
+      console.log(JSON.stringify(this.userBanList));
       for (let userReport of this.userBanList) {
         await this.banUser(userReport);
       }
@@ -216,7 +216,7 @@ class Banbot {
     let banMessage = "You have been banned from /r/" + this.subreddit + duration +
       " for having " + userReport.totalBadKarma + " karma" +
       " out of our limit of " + this.badKarmaLimit +
-      ". Report: " + JSON.stringify(userReport) +
+      ". Report: " + JSON.stringify(userReport.badKarma) +
       ". If this post history does not describe who you are now, you may appeal this ban.";
 
     // The ban reason and note can't be longer than 300 chars
