@@ -232,8 +232,6 @@ class Banbot {
       banOptions.duration = this.banDuration;
     }
 
-    console.log(banMessage);
-
     // Ban the user
     await this.r.getSubreddit(this.subreddit).banUser(banOptions).then(async () => {
       console.log("Banned " + userReport.user + " from " + this.subreddit);
