@@ -197,10 +197,10 @@ class Banbot {
 
     if (this.dryRun) {
       console.log("Not banning, but here's the list:");
-      console.log(JSON.stringify(this.userBanList));
+      console.log(JSON.stringify(this.userBanList, null, 2));
     } else {
       console.log('Banning users ... ');
-      console.log(JSON.stringify(this.userBanList));
+      console.log(JSON.stringify(this.userBanList, null, 2));
       for (let userReport of this.userBanList) {
         await this.banUser(userReport);
       }
